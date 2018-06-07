@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -40,6 +41,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+//RPM command to extract packages from the rpm database
+var rpmCmd = []string{
+	"rpm", "--nodigest", "--nosignature",
+	"-qa", "--qf", "%{NAME}\t%{VERSION}\t%{SIZE}\n",
+}
 var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 // daemonMutex is required to protect against other go-routines, as
@@ -87,7 +93,32 @@ func (a RPMAnalyzer) getPackages(image pkgutil.Image) (map[string]util.PackageIn
 		}
 	}
 
-	return rpmDataFromContainer(image)
+	packages, err := rpmDataFromImageFS(image)
+	if err != nil {
+		logrus.Warn("Trying to run the RPM binary of the image in a container")
+		return rpmDataFromContainer(image)
+	}
+	return packages, err
+}
+
+// rpmDataFromImageFS runs a local rpm binary, if any, to query the image
+// rpmdb and returns a map of installed packages.
+func rpmDataFromImageFS(image pkgutil.Image) (map[string]util.PackageInfo, error) {
+	packages := make(map[string]util.PackageInfo)
+	// Check there is an executable rpm tool in host
+	if err := exec.Command("rpm", "--version").Run(); err != nil {
+		logrus.Warn("No RPM binary in host")
+		return packages, err
+	}
+	macrosPath := filepath.Join(image.FSPath, "usr/lib/rpm/macros")
+	cmdArgs := append([]string{"--root", image.FSPath, "--macros", macrosPath}, rpmCmd[1:]...)
+	out, err := exec.Command(rpmCmd[0], cmdArgs...).Output()
+	if err != nil {
+		logrus.Warnf("RPM call failed: %s", err.Error())
+		return packages, err
+	}
+	output := strings.Split(string(out), "\n")
+	return parsePackageData(output)
 }
 
 // rpmDataFromContainer runs image in a container, queries the data of
@@ -114,7 +145,7 @@ func rpmDataFromContainer(image pkgutil.Image) (map[string]util.PackageInfo, err
 	defer logrus.Infof("Removing image %s", imageName)
 
 	contConf := godocker.Config{
-		Entrypoint: []string{"rpm", "--nodigest", "--nosignature", "-qa", "--qf", "%{NAME}\t%{VERSION}\t%{SIZE}\n"},
+		Entrypoint: rpmCmd,
 		Image:      imageName,
 	}
 
