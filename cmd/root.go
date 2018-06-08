@@ -133,9 +133,7 @@ func getImageForName(imageName string) (pkgutil.Image, error) {
 		if err != nil {
 			return pkgutil.Image{}, err
 		}
-	}
-
-	if strings.HasPrefix(imageName, DaemonPrefix) {
+	} else if strings.HasPrefix(imageName, DaemonPrefix) {
 		// remove the daemon prefix
 		imageName = strings.Replace(imageName, DaemonPrefix, "", -1)
 
