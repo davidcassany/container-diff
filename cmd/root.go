@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -166,13 +167,14 @@ func getImageForName(imageName string) (pkgutil.Image, error) {
 
 	// create tempdir and extract fs into it
 	var layers []pkgutil.Layer
+	rgxp, _ := regexp.Compile("[^a-zA-Z0-9._-]+")
 	if includeLayers() {
 		imgLayers, err := img.Layers()
 		if err != nil {
 			return pkgutil.Image{}, err
 		}
 		for _, layer := range imgLayers {
-			path, err := ioutil.TempDir("", strings.Replace(imageName, "/", "", -1))
+			path, err := ioutil.TempDir("", rgxp.ReplaceAllString(imageName, ""))
 			if err != nil {
 				return pkgutil.Image{
 					Layers: layers,
@@ -188,7 +190,7 @@ func getImageForName(imageName string) (pkgutil.Image, error) {
 			})
 		}
 	}
-	path, err := ioutil.TempDir("", strings.Replace(imageName, "/", "", -1))
+	path, err := ioutil.TempDir("", rgxp.ReplaceAllString(imageName, ""))
 	if err != nil {
 		return pkgutil.Image{}, err
 	}
